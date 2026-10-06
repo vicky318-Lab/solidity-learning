@@ -10,7 +10,10 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@nomicfoundation/hardhat-ignition": "^0.15.16",
+    "@nomicfoundation/hardhat-ignition-ethers": "^0.15.17",
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@types/mocha": "^10.0.10",
     "hardhat": "^2.22.19",
     "typescript": "^5.5.4"
   }
