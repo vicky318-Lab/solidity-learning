@@ -6,10 +6,12 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("TinyBank", () => {
     let signers: HardhatEthersSigner[];
+    let managers: HardhatEthersSigner[];
     let myTokenC: MyToken;
     let tinyBankC: TinyBank;
     beforeEach(async () => {
         signers = await hre.ethers.getSigners();
+        managers = [signers[1], signers[2], signers[3]];
          myTokenC = await hre.ethers.deployContract("MyToken", [
             "MyToken",
             "MT",
@@ -17,7 +19,8 @@ describe("TinyBank", () => {
             MINTING_AMOUNT,
         ]);
         tinyBankC = await hre.ethers.deployContract("TinyBank", [
-            await myTokenC.getAddress()
+            await myTokenC.getAddress(),
+            managers.map((m) => m.address),
         ]);
         await myTokenC.setManager(tinyBankC.getAddress());
     });
@@ -76,12 +79,66 @@ describe("TinyBank", () => {
             );
         });
 
-        it("should revert when changing rewardPerBlock by hacker", async () => {
-            const hacker = signers[3];
-            const rewardToChange = hre.ethers.parseUnits("10000", DECIMALS);
-           await expect(
-                tinyBankC.connect(hacker).setRewardPerBlock(rewardToChange)
-            ).to.be.revertedWith("You are not authorized to manage this contract");
         });
+        
+    describe("Multi Manager", () => {
+        const newReward = hre.ethers.parseUnits("10", DECIMALS);
+
+        it("should register 3 managers", async () => {
+            for (let i = 0; i < managers.length; i++) {
+                expect(await tinyBankC.managers(i)).equal(managers[i].address);
+                expect(await tinyBankC.isManager(managers[i].address)).equal(true);
+            }
         });
+
+        it("should revert deployment with fewer than 3 managers", async () => {
+            await expect(
+                hre.ethers.deployContract("TinyBank", [
+                    await myTokenC.getAddress(),
+                    [signers[1].address, signers[2].address],
+                ])
+            ).to.be.revertedWith("At least 3 managers required");
+        });
+
+        it("should revert when non-manager confirms", async () => {
+            const hacker = signers[4];
+            await expect(tinyBankC.connect(hacker).confirm())
+                .to.be.revertedWith("You are not a manager");
+        });
+
+        it("should revert when non-manager changes rewardPerBlock", async () => {
+            const hacker = signers[4];
+            await expect(tinyBankC.connect(hacker).setRewardPerBlock(newReward))
+                .to.be.revertedWith("You are not a manager");
+        });
+
+        it("should revert when no manager has confirmed", async () => {
+            await expect(tinyBankC.connect(managers[0]).setRewardPerBlock(newReward))
+                .to.be.revertedWith("Not all confirmed yet");
+        });
+
+        it("should revert when only some managers have confirmed", async () => {
+            await tinyBankC.connect(managers[0]).confirm();
+            await tinyBankC.connect(managers[1]).confirm();
+            await expect(tinyBankC.connect(managers[0]).setRewardPerBlock(newReward))
+                .to.be.revertedWith("Not all confirmed yet");
+        });
+
+        it("should change rewardPerBlock after all managers confirm", async () => {
+            for (const m of managers) {
+                await tinyBankC.connect(m).confirm();
+            }
+            await tinyBankC.connect(managers[0]).setRewardPerBlock(newReward);
+            expect(await tinyBankC.rewardPerBlock()).equal(newReward);
+        });
+
+        it("should require confirmations again after a change", async () => {
+            for (const m of managers) {
+                await tinyBankC.connect(m).confirm();
+            }
+            await tinyBankC.connect(managers[0]).setRewardPerBlock(newReward);
+            await expect(tinyBankC.connect(managers[0]).setRewardPerBlock(newReward))
+                .to.be.revertedWith("Not all confirmed yet");
+        });
+    });
 });

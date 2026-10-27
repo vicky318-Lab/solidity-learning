@@ -22,6 +22,7 @@
 pragma solidity ^0.8.28;
 
 import "./ManagedAccess.sol";
+import "./MultiManagedAccess.sol";
 
 interface IMyToken {
     function transfer(uint256 amount, address to) external;
@@ -31,7 +32,7 @@ interface IMyToken {
     function mint(uint256 amount, address owner) external;
 }
 
-contract TinyBank is ManagedAccess {
+contract TinyBank is ManagedAccess, MultiManagedAccess {
     event Staked(address from, uint256 amount);
     event Withdraw(uint256 amount, address to);
 
@@ -40,15 +41,18 @@ contract TinyBank is ManagedAccess {
     mapping(address => uint256) public lastClaimedBlock;
 
     uint256 defaultRewardPerBlock = 1 * 10 ** 18;
-    uint256 rewardPerBlock;
+    uint256 public rewardPerBlock;
 
     mapping(address => uint256) public staked;
     uint256 public totalStaked;
 
-    constructor(IMyToken _stakingtoken) ManagedAccess (msg.sender, msg.sender) {
-        stakingtoken = _stakingtoken;
-        rewardPerBlock = defaultRewardPerBlock;
-    }
+    constructor(IMyToken _stakingtoken, address[] memory _managers)
+    ManagedAccess(msg.sender, msg.sender)
+    MultiManagedAccess(_managers)
+{
+    stakingtoken = _stakingtoken;
+    rewardPerBlock = defaultRewardPerBlock;
+}
 
     //who, when?
     modifier updateReward(address to) {
@@ -62,12 +66,12 @@ contract TinyBank is ManagedAccess {
         _;
     }
 
-    function setRewardPerBlock(uint256 _amount) external onlyManager {
+    function setRewardPerBlock(uint256 _amount) external onlyAllConfirmed {
         rewardPerBlock = _amount;
     }
 
     function stake(uint256 _amount) external updateReward(msg.sender) {
-        require(_amount >= 0, "cannot stake 0 amount");
+        require(_amount > 0, "cannot stake 0 amount");
         stakingtoken.transferFrom(msg.sender, address(this), _amount);
         staked[msg.sender] += _amount;
         totalStaked += _amount;
